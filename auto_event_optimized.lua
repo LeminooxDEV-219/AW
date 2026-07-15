@@ -773,6 +773,8 @@ local function handleBossLogic(activeInstance)
     if _farmingDueToFailure then
         local remaining = 300 - (now - _lastBossFailTime)
         if remaining > 0 then
+            -- Giữ ZN_Auto TẮT liên tục khi đang farm
+            pcall(function() activeInstance:FireCustom("ZN_Auto", false) end)
             if _state.Level ~= _farmLevel then
                 pcall(function() activeInstance:FireCustom("ZN_Warp", _farmLevel) end)
             end
@@ -1159,7 +1161,7 @@ task.wait(math.random() * 30)
 
 -- Scheduler cooldowns (seconds)
 local INTERVALS = {
-    hatch       = 10,
+    hatch       = 2,
     rebirth     = 60,
     upgrades    = 60,
     equipBest   = 120,
