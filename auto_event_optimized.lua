@@ -591,7 +591,7 @@ local _currencyCacheTimes = {}
 local function getEventCurrencyBalance(currencyName)
     local now = tick()
     local lastTime = _currencyCacheTimes[currencyName] or 0
-    if now - lastTime < 120 and _currencyCache[currencyName] ~= nil then
+    if now - lastTime < 10 and _currencyCache[currencyName] ~= nil then
         return _currencyCache[currencyName]
     end
     local balance = 0
@@ -1205,7 +1205,6 @@ end
 
 -- Main loop — single thread, tuần tự, không song song
 while true do
-    task.wait(20) -- 20s base tick
 
     -- 1. Ensure in event (every tick)
     local inEvent = ensureInEvent()
@@ -1215,7 +1214,10 @@ while true do
     end
 
     local activeInstance = InstancingCmds.Get()
-    if not activeInstance then continue end
+    if not activeInstance then
+        task.wait(5)
+        continue
+    end
 
     -- 2. Read state (every tick, reuse table)
     getTHState()
@@ -1236,11 +1238,6 @@ while true do
     -- 6. Auto Upgrades (60s)
     if CFG.AutoUpgrade ~= false and shouldRun("upgrades") then
         pcall(autoBuyUpgrades)
-    end
-
-    -- 7. Auto Hatch (60s)
-    if CFG.AutoHatch ~= false and shouldRun("hatch") then
-        pcall(autoHatch)
     end
 
     -- 8. Equip Best Pet (120s)
@@ -1271,5 +1268,15 @@ while true do
     -- 13. Webhook (120s)
     if shouldRun("webhook") then
         pcall(handleWebhookAlerts)
+    end
+
+    -- 7. Auto Hatch — loop 3s/lần, chạy liên tục trong 20s trước khi quay lại main tick
+    if CFG.AutoHatch ~= false then
+        for _hatchRound = 1, 6 do
+            pcall(autoHatch)
+            task.wait(3)
+        end
+    else
+        task.wait(20)
     end
 end
