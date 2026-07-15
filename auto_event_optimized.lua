@@ -896,6 +896,8 @@ local function autoFuseEventPets()
 end
 
 -- Equip Enchants
+local _lastEnchantEquipTime = 0
+
 local function equipEnchants()
     if not CFG.AutoEquipEnchants then return end
     local targetList = CFG.Enchants
@@ -923,48 +925,61 @@ local function equipEnchants()
             end
         end
 
+        -- Sort by tier cao nhất trước
         table.sort(allEnchants, function(a, b) return a.tier > b.tier end)
 
-        local targetUids = {}
         local slotsNeeded = EnchantCmds.GetMaxEquippedEnchants() or 5
+        local targetUids = {}
 
         for _, targetName in ipairs(targetList) do
             if #targetUids >= slotsNeeded then break end
             local lowerTarget = string.lower(targetName)
+
             for _, entry in ipairs(allEnchants) do
-                if entry.used < entry.qty and string.find(string.lower(entry.id), lowerTarget, 1, true) then
-                    entry.used = entry.used + 1
-                    table.insert(targetUids, entry.uid)
-                    break
+                if entry.used < entry.qty then
+                    local entryIdLower = string.lower(entry.id)
+                    -- Match chính xác hoặc bắt đầu bằng target name
+                    if entryIdLower == lowerTarget or entryIdLower:find(lowerTarget, 1, true) then
+                        entry.used = entry.used + 1
+                        table.insert(targetUids, entry.uid)
+                        break
+                    end
                 end
             end
         end
 
-        local currentlyEquipped = save.EquippedEnchants or {}
-        local currentUids = {}
-        for i = 1, slotsNeeded do
-            local eqUid = currentlyEquipped[i] or currentlyEquipped[tostring(i)]
-            if eqUid then table.insert(currentUids, eqUid) end
+        if #targetUids == 0 then return end
+
+        -- Luôn clear + re-equip (không so sánh UID vì UID thay đổi sau rebirth)
+        local maxSlots = EnchantCmds.GetMaxEquippedEnchants() or 5
+        for i = 1, maxSlots do
+            pcall(function() Network.Fire("Enchants_ClearSlot", i) end)
+            task.wait(0.1)
+        end
+        task.wait(1.5) -- Chờ server xử lý clear hết
+
+        -- Equip từng cái, delay lâu hơn vì cùng UID (stacked enchant)
+        for idx, uid in ipairs(targetUids) do
+            pcall(function() Network.Fire("Enchants_Equip", uid) end)
+            task.wait(0.5) -- 0.5s giữa mỗi equip để server kịp xử lý stack
         end
 
-        local needsReequip = false
-        if #currentUids ~= #targetUids then
-            needsReequip = true
-        else
-            for i, uid in ipairs(targetUids) do
-                if currentUids[i] ~= uid then needsReequip = true; break end
+        -- Retry lần 2 cho các slot còn trống (server có thể miss)
+        task.wait(1)
+        local save2 = Save.Get()
+        local equipped2 = save2 and save2.EquippedEnchants or {}
+        local filledSlots = 0
+        for i = 1, maxSlots do
+            if equipped2[i] or equipped2[tostring(i)] then
+                filledSlots = filledSlots + 1
             end
         end
-
-        if needsReequip and #targetUids > 0 then
-            local maxSlots = EnchantCmds.GetMaxEquippedEnchants() or 5
-            for i = 1, maxSlots do
-                pcall(function() Network.Fire("Enchants_ClearSlot", i) end)
-            end
-            task.wait(0.5)
-            for _, uid in ipairs(targetUids) do
-                pcall(function() Network.Fire("Enchants_Equip", uid) end)
-                task.wait(0.15)
+        if filledSlots < #targetUids then
+            for idx, uid in ipairs(targetUids) do
+                if idx > filledSlots then
+                    pcall(function() Network.Fire("Enchants_Equip", uid) end)
+                    task.wait(0.5)
+                end
             end
         end
     end)
