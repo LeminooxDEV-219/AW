@@ -1,48 +1,19 @@
---[[
-    ██╗     ███████╗███╗   ███╗██╗███╗   ██╗
-    ██║     ██╔════╝████╗ ████║██║████╗  ██║
-    ██║     █████╗  ██╔████╔██║██║██╔██╗ ██║
-    ██║     ██╔══╝  ██║╚██╔╝██║██║██║╚██╗██║
-    ███████╗███████╗██║ ╚═╝ ██║██║██║ ╚████║
-    ╚══════╝╚══════╝╚═╝     ╚═╝╚═╝╚═╝  ╚═══╝
-    
-    Ultra-Optimized Auto Event Script
-    Designed for 55-60 concurrent LDPlayer tabs (1 core / 2 RAM)
-    
-    Architecture:
-    - Single main loop (no parallel task.spawn)
-    - Scheduler-based task execution with individual cooldowns
-    - Immediate rendering kill before all logic
-    - Random stagger to prevent CPU sync across tabs
-    - Aggressive caching, minimal memory allocation
-]]
 
--- Đọc config sớm để quyết định có tối ưu hay không
 local _CFG_OPT = not getgenv().Config or getgenv().Config.OptimizeGraphics ~= false
 
---=============================================
--- PHASE 0: INSTANT KILL RENDERING
--- Chạy TRƯỚC TẤT CẢ, giảm tải GPU/CPU ngay lập tức
--- Set Config.OptimizeGraphics = false để TẮT tối ưu (xem farm)
---=============================================
-
 if _CFG_OPT then
-    -- FPS cap ngay lập tức
     pcall(function()
         if setfpscap then setfpscap(getgenv().Config and getgenv().Config.FPSCap or 5) end
     end)
 
-    -- Tắt 3D rendering ngay
     pcall(function()
         game:GetService("RunService"):Set3dRenderingEnabled(false)
     end)
 
-    -- Tắt toàn bộ CoreGui
     pcall(function()
         game:GetService("StarterGui"):SetCoreGuiEnabled(Enum.CoreGuiType.All, false)
     end)
 
-    -- Kill lighting + sound ngay
     pcall(function()
         local lighting = game:GetService("Lighting")
         lighting.GlobalShadows = false
@@ -59,7 +30,6 @@ if _CFG_OPT then
         game:GetService("SoundService").Volume = 0
     end)
 
-    -- Kill terrain detail
     pcall(function()
         local terrain = workspace:FindFirstChildOfClass("Terrain")
         if terrain then
@@ -69,13 +39,8 @@ if _CFG_OPT then
             terrain.WaterDetailLevel = Enum.WaterDetailLevel.Low
         end
     end)
-end -- _CFG_OPT
+end
 
---=============================================
--- PHASE 1: CONFIG + MODULES
---=============================================
-
--- Config defaults — nếu không set thì BẬT tất cả
 local defaults = {
     AntiAFK = true,
     OptimizeGraphics = true,
@@ -119,7 +84,6 @@ end
 
 local CFG = getgenv().Config
 
--- Main world check
 local mainWorlds = {
     [8737899170] = true,  [16498369169] = true, [17503543197] = true,
     [140403681187145] = true, [15502302041] = true, [16170461708] = true,
@@ -135,13 +99,11 @@ if not mainWorlds[game.PlaceId] then
     return
 end
 
--- Services — cache một lần
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local RS = game:GetService("ReplicatedStorage")
 local HttpService = game:GetService("HttpService")
 
--- Modules — require một lần, cache reference
 local Network = require(RS.Library.Client.Network)
 local Save = require(RS.Library.Client.Save)
 local InstancingCmds = require(RS.Library.Client.InstancingCmds)
@@ -158,7 +120,6 @@ pcall(function() _InventoryCmds = require(RS.Library.Client.InventoryCmds) end)
 pcall(function() _CurrencyItem = require(RS.Library.Items.CurrencyItem) end)
 pcall(function() _Inventory = require(RS.Library.Universal.Inventory) end)
 
--- Event pet IDs (pre-built lookup)
 local eventPetIds = {
     ["Caveman Bear"] = true, ["Mammoth Elephant"] = true,
     ["Bastet Cat"] = true, ["Horus Falcon"] = true,
@@ -168,20 +129,13 @@ local eventPetIds = {
     ["Steppe Wolf"] = true, ["Samurai Kitsune"] = true,
 }
 
--- Reusable state table (không tạo mới mỗi lần)
 local _state = { Level = 1, IsBoss = false, Kills = 0, MaxKills = 10, Rebirths = 0, TimeLeft = nil }
 
--- Pre-cache references (lazy init)
 local _cachedHudText = nil
 local _hudCacheTime = 0
 
---=============================================
--- PHASE 2: ANTI-AFK (connection-based, không loop)
---=============================================
-
 pcall(function()
     local VirtualUser = game:GetService("VirtualUser")
-    -- Chỉ dùng Idled connection — không tạo loop riêng
     LocalPlayer.Idled:Connect(function()
         pcall(function()
             VirtualUser:Button2Down(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
@@ -191,11 +145,6 @@ pcall(function()
     end)
 end)
 
---=============================================
--- PHASE 3: AGGRESSIVE VISUAL CLEANUP (chạy 1 lần)
---=============================================
-
--- Hatch animation skip
 pcall(function()
     if EggCmds then
         if EggCmds.Play then EggCmds.Play = function() return end end
@@ -231,7 +180,6 @@ pcall(function()
     if ItemNotice and ItemNotice.Add then ItemNotice.Add = function() return function() end end end
 end)
 
--- Kill sounds — 1 lần, không listen thêm vì 3D đã tắt
 pcall(function()
     for _, sound in ipairs(game:GetDescendants()) do
         if sound:IsA("Sound") then sound:Stop() end
@@ -240,7 +188,6 @@ end)
 
 if _CFG_OPT then
 
--- Destroy other players' characters + disable new ones
 pcall(function()
     local function killChar(char)
         task.defer(function()
@@ -264,7 +211,6 @@ pcall(function()
     end)
 end)
 
--- Clean visual objects — BATCH, 1 lần duy nhất
 pcall(function()
     local cleanTypes = {
         ParticleEmitter = true, Trail = true, Beam = true, Fire = true,
@@ -296,7 +242,6 @@ pcall(function()
     end
 end)
 
--- DescendantAdded — debounced batch (chỉ clean particles/visual, nhẹ)
 pcall(function()
     local _lastCleanBatch = 0
     workspace.DescendantAdded:Connect(function(child)
@@ -309,7 +254,6 @@ pcall(function()
     end)
 end)
 
--- Destroy decorations + orbs — 1 lần
 pcall(function()
     local map = workspace:FindFirstChild("Map")
     if map then
@@ -337,13 +281,11 @@ pcall(function()
     end
 end)
 
--- Disable PlayerGui — tắt tất cả GUI trừ TapperHud (cần đọc level)
 pcall(function()
     if CFG.DisablePlayerGui ~= false then
         local function cleanGui(gui)
             if not gui:IsA("ScreenGui") or gui.Name == "RobloxGui" then return end
             if gui.Name == "TapperHud" then
-                -- Giữ TapperHud để đọc level, nhưng ẩn visual
                 for _, childName in ipairs({"HUD", "Pets"}) do
                     local inner = gui:FindFirstChild(childName)
                     if inner then
@@ -373,7 +315,6 @@ pcall(function()
     end
 end)
 
--- Disable other player animations
 pcall(function()
     local function killAnimator(char)
         if char == LocalPlayer.Character then return end
@@ -391,12 +332,7 @@ pcall(function()
     Players.PlayerAdded:Connect(function(p) p.CharacterAdded:Connect(killAnimator) end)
 end)
 
-end -- if _CFG_OPT (end of visual optimization block)
-
-
---=============================================
--- PHASE 4: CORE FUNCTIONS
---=============================================
+end
 
 local function safeGetItemId(item)
     if not item then return nil end
@@ -411,7 +347,6 @@ local function safeGetItemId(item)
     return nil
 end
 
--- getTHState — reuse _state table, cache HUD reference
 local function getTHState()
     _state.Level = 1
     _state.IsBoss = false
@@ -421,7 +356,6 @@ local function getTHState()
     _state.TimeLeft = nil
 
     local now = tick()
-    -- Re-cache HUD reference mỗi 60s
     if not _cachedHudText or now - _hudCacheTime > 60 then
         _cachedHudText = nil
         pcall(function()
@@ -484,7 +418,6 @@ local function getTHState()
     return _state
 end
 
--- ensureInFarmStage
 local function ensureInFarmStage()
     local char = LocalPlayer.Character
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -517,7 +450,6 @@ local function ensureInFarmStage()
     end
 end
 
--- ensureInEvent
 local _lastEnterTP = 0
 local _lastJoinTime = tick()
 
@@ -572,7 +504,6 @@ local function ensureInEvent()
     return true
 end
 
--- ensureAutoTapper
 local function ensureAutoTapper()
     local saveStat = Save.Get()
     if saveStat and not saveStat.AutoTapper then
@@ -580,11 +511,6 @@ local function ensureAutoTapper()
     end
 end
 
---=============================================
--- PHASE 5: TASK FUNCTIONS
---=============================================
-
--- Currency cache (120s thay vì 20s)
 local _currencyCache = {}
 local _currencyCacheTimes = {}
 
@@ -613,7 +539,6 @@ local function getEventCurrencyBalance(currencyName)
     return balance
 end
 
--- Auto Buy Upgrades
 local _upgradeKeys = { "TapHeroesEggUpgrade", "TapHeroesClickDamage", "TapHeroesPetDamage", "TapHeroesCoinBonus" }
 
 local function autoBuyUpgrades()
@@ -632,7 +557,6 @@ local function autoBuyUpgrades()
     end
 end
 
--- Auto Hatch
 local function autoHatch()
     local activeInstance = InstancingCmds.Get()
     if not activeInstance or activeInstance.instanceID ~= "TapHeroes" then return end
@@ -672,7 +596,6 @@ local function autoHatch()
         task.wait(0.3)
     end
 
-    -- Parse price
     local price = nil
     pcall(function()
         local priceHUD = closestEggModel:FindFirstChild("PriceHUD")
@@ -737,7 +660,6 @@ local function autoHatch()
     end
 end
 
--- Auto Rebirth (dùng Level Cap After Rebirth thay vì hardcode 120)
 local function autoRebirth(currentLevel)
     local cap = CFG["Level Cap After Rebirth"] or 115
     if currentLevel < cap then return end
@@ -754,7 +676,6 @@ local function autoRebirth(currentLevel)
     end
 end
 
--- Boss Failure Logic
 local _lastBossFailTime = 0
 local _farmingDueToFailure = false
 local _failedBossLevel = nil
@@ -773,7 +694,6 @@ local function handleBossLogic(activeInstance)
     if _farmingDueToFailure then
         local remaining = 300 - (now - _lastBossFailTime)
         if remaining > 0 then
-            -- Giữ ZN_Auto TẮT liên tục khi đang farm
             pcall(function() activeInstance:FireCustom("ZN_Auto", false) end)
             if _state.Level ~= _farmLevel then
                 pcall(function() activeInstance:FireCustom("ZN_Warp", _farmLevel) end)
@@ -795,7 +715,6 @@ local function handleBossLogic(activeInstance)
     if isBossLevel then
         local timeSpent = now - _levelStartTime
         if timeSpent > 35 then
-            -- Trigger boss failure
             _lastBossFailTime = now
             _farmingDueToFailure = true
             _failedBossLevel = _state.Level
@@ -810,7 +729,6 @@ local function handleBossLogic(activeInstance)
     end
 end
 
--- Auto Fusion
 local function autoFuseEventPets()
     local saveStat = Save.Get()
     local petInventory = saveStat and saveStat.Inventory and saveStat.Inventory.Pet
@@ -861,7 +779,6 @@ local function autoFuseEventPets()
 
     local hasCraft = false
 
-    -- Gold crafts
     for petId, stacks in pairs(normalGroups) do
         local best = nil
         for _, s in ipairs(stacks) do
@@ -875,7 +792,6 @@ local function autoFuseEventPets()
         end
     end
 
-    -- Rainbow crafts
     for petId, stacks in pairs(goldenGroups) do
         local best = nil
         for _, s in ipairs(stacks) do
@@ -895,7 +811,6 @@ local function autoFuseEventPets()
     end
 end
 
--- Equip Enchants
 local _lastEnchantEquipTime = 0
 
 local function equipEnchants()
@@ -925,7 +840,6 @@ local function equipEnchants()
             end
         end
 
-        -- Sort by tier cao nhất trước
         table.sort(allEnchants, function(a, b) return a.tier > b.tier end)
 
         local slotsNeeded = EnchantCmds.GetMaxEquippedEnchants() or 5
@@ -938,7 +852,6 @@ local function equipEnchants()
             for _, entry in ipairs(allEnchants) do
                 if entry.used < entry.qty then
                     local entryIdLower = string.lower(entry.id)
-                    -- Match chính xác hoặc bắt đầu bằng target name
                     if entryIdLower == lowerTarget or entryIdLower:find(lowerTarget, 1, true) then
                         entry.used = entry.used + 1
                         table.insert(targetUids, entry.uid)
@@ -950,21 +863,18 @@ local function equipEnchants()
 
         if #targetUids == 0 then return end
 
-        -- Luôn clear + re-equip (không so sánh UID vì UID thay đổi sau rebirth)
         local maxSlots = EnchantCmds.GetMaxEquippedEnchants() or 5
         for i = 1, maxSlots do
             pcall(function() Network.Fire("Enchants_ClearSlot", i) end)
             task.wait(0.1)
         end
-        task.wait(1.5) -- Chờ server xử lý clear hết
+        task.wait(1.5)
 
-        -- Equip từng cái, delay lâu hơn vì cùng UID (stacked enchant)
         for idx, uid in ipairs(targetUids) do
             pcall(function() Network.Fire("Enchants_Equip", uid) end)
-            task.wait(0.5) -- 0.5s giữa mỗi equip để server kịp xử lý stack
+            task.wait(0.5)
         end
 
-        -- Retry lần 2 cho các slot còn trống (server có thể miss)
         task.wait(1)
         local save2 = Save.Get()
         local equipped2 = save2 and save2.EquippedEnchants or {}
@@ -985,7 +895,6 @@ local function equipEnchants()
     end)
 end
 
--- Auto Claim Mail
 local _lastClaimMailTime = 0
 
 local function autoClaimMail()
@@ -1007,7 +916,6 @@ local function autoClaimMail()
     pcall(function() Network.Fire("LD_BestFit") end)
 end
 
--- Auto Send Mail
 local _lastSendMailTime = 0
 
 local function autoSendMail()
@@ -1056,7 +964,6 @@ local function autoSendMail()
     end)
 end
 
--- Webhook
 local _seenPets = {}
 local _lastWebhookTime = 0
 local _lastPetCount = 0
@@ -1166,15 +1073,8 @@ local function handleWebhookAlerts()
     end)
 end
 
-
---=============================================
--- PHASE 6: SINGLE MAIN LOOP — SCHEDULER
---=============================================
-
--- Random stagger: mỗi tab bắt đầu lệch nhau 0-30s
 task.wait(math.random() * 30)
 
--- Scheduler cooldowns (seconds)
 local INTERVALS = {
     hatch       = 2,
     rebirth     = 60,
@@ -1187,15 +1087,13 @@ local INTERVALS = {
     webhook     = 120,
 }
 
--- Last execution times
 local _lastRun = {}
 for k, _ in pairs(INTERVALS) do _lastRun[k] = 0 end
 
--- Helper: check if task should run (with ±20% random jitter)
 local function shouldRun(taskName)
     local now = tick()
     local interval = INTERVALS[taskName]
-    local jitter = interval * 0.2 * (math.random() * 2 - 1) -- ±20%
+    local jitter = interval * 0.2 * (math.random() * 2 - 1)
     if now - _lastRun[taskName] >= interval + jitter then
         _lastRun[taskName] = now
         return true
@@ -1203,10 +1101,8 @@ local function shouldRun(taskName)
     return false
 end
 
--- Main loop — single thread, tuần tự, không song song
 while true do
 
-    -- 1. Ensure in event (every tick)
     local inEvent = ensureInEvent()
     if not inEvent then
         task.wait(10)
@@ -1219,58 +1115,46 @@ while true do
         continue
     end
 
-    -- 2. Read state (every tick, reuse table)
     getTHState()
 
-    -- 3. Auto Tapper (every tick, lightweight)
     pcall(ensureAutoTapper)
 
-    -- 4. Boss Logic (every tick)
     if CFG.BossFailureLogic ~= false then
         pcall(function() handleBossLogic(activeInstance) end)
     end
 
-    -- 5. Auto Rebirth (60s)
     if CFG.AutoRebirth and shouldRun("rebirth") then
         pcall(function() autoRebirth(_state.Level) end)
     end
 
-    -- 6. Auto Upgrades (60s)
     if CFG.AutoUpgrade ~= false and shouldRun("upgrades") then
         pcall(autoBuyUpgrades)
     end
 
-    -- 8. Equip Best Pet (120s)
     if shouldRun("equipBest") then
         pcall(function() PetCmds.EquipBest() end)
     end
 
-    -- 9. Auto Fusion (300s)
     if CFG.AutoFusion ~= false and shouldRun("fusion") then
         pcall(autoFuseEventPets)
     end
 
-    -- 10. Equip Enchants (240s)
     if CFG.AutoEquipEnchants and shouldRun("enchants") then
         pcall(equipEnchants)
     end
 
-    -- 11. Claim Mail (180s)
     if CFG.AutoClaimMail and shouldRun("claimMail") then
         pcall(autoClaimMail)
     end
 
-    -- 12. Send Mail (180s)
     if CFG.AutoSendMail and shouldRun("sendMail") then
         pcall(autoSendMail)
     end
 
-    -- 13. Webhook (120s)
     if shouldRun("webhook") then
         pcall(handleWebhookAlerts)
     end
 
-    -- 7. Auto Hatch — loop 3s/lần, chạy liên tục trong 20s trước khi quay lại main tick
     if CFG.AutoHatch ~= false then
         for _hatchRound = 1, 6 do
             pcall(autoHatch)
