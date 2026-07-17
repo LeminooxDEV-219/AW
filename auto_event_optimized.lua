@@ -684,6 +684,8 @@ local _lastLevel = nil
 local _levelStartTime = tick()
 
 local function handleBossLogic(activeInstance)
+    pcall(function() activeInstance:FireCustom("ZN_Auto", true) end)
+    return 
     local now = tick()
 
     if _state.Level ~= _lastLevel then
